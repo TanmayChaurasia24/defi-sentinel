@@ -14,10 +14,13 @@
  * deterministic risk-engine-based decisions.
  * ─────────────────────────────────────────────────────────────────────────────
  */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runAgentDecision = runAgentDecision;
 exports.getAgentDecision = getAgentDecision;
-const sdk_1 = require("@openrouter/sdk");
+const axios_1 = __importDefault(require("axios"));
 const mcp_1 = require("./mcp");
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenRouter config
@@ -205,21 +208,23 @@ const MAX_TOOL_ITERATIONS = 5;
  * Run the agentic loop — handles multi-turn tool use via the OpenRouter SDK.
  * Returns the final text response from the model.
  */
-async function agentLoop(client, messages, context) {
+async function agentLoop(apiKey, messages, context) {
     let finalText = '';
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-        const response = await client.chat.send({
-            chatRequest: {
-                model: getModel(),
-                messages: messages,
-                tools: MCP_TOOLS,
-                maxTokens: 1000,
+        const response = await axios_1.default.post('https://openrouter.ai/api/v1/chat/completions', {
+            model: getModel(),
+            messages: messages,
+            tools: MCP_TOOLS,
+            max_tokens: 1000,
+        }, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'HTTP-Referer': 'https://defi-sentinel.casper.network',
+                'X-Title': 'DeFi Sentinel Agent',
+                'Content-Type': 'application/json',
             },
-            httpReferer: 'https://defi-sentinel.casper.network',
-            appTitle: 'DeFi Sentinel Agent',
         });
-        // The SDK returns a ChatResult with choices[]
-        const result = response;
+        const result = response.data;
         const choice = result.choices?.[0];
         if (!choice) {
             finalText = '[No response from model]';
@@ -347,13 +352,12 @@ async function runAgentDecision(context) {
     // ── Build user message with full context ─────────────────────────────────
     const userMessage = buildUserMessage(context);
     try {
-        const client = new sdk_1.OpenRouter({ apiKey });
         const messages = [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userMessage },
         ];
         // ── Run agent loop (handles multi-turn tool use) ─────────────────────
-        const responseText = await agentLoop(client, messages, context);
+        const responseText = await agentLoop(apiKey, messages, context);
         // ── Parse decision JSON from response ────────────────────────────────
         const parsed = parseDecisionJson(responseText);
         if (!parsed || !parsed.action) {

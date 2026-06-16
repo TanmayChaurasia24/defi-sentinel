@@ -25,7 +25,6 @@
   "author": "DeFi Sentinel Team",
   "license": "MIT",
   "dependencies": {
-    "@openrouter/sdk": "^0.12.79",
     "axios": "^1.7.0",
     "casper-js-sdk": "^2.15.0",
     "cors": "^2.8.5",

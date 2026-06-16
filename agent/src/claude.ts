@@ -14,7 +14,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { OpenRouter } from '@openrouter/sdk';
+import axios from 'axios';
 import type { RiskResult } from './risk';
 import type { WalletData, DelegationInfo, Deploy } from './casper';
 import { callMcpTool } from './mcp';
@@ -263,26 +263,32 @@ const MAX_TOOL_ITERATIONS = 5;
  * Returns the final text response from the model.
  */
 async function agentLoop(
-  client: OpenRouter,
+  apiKey: string,
   messages: Message[],
   context: AgentContext
 ): Promise<string> {
   let finalText = '';
 
   for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
-    const response = await client.chat.send({
-      chatRequest: {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
         model: getModel(),
-        messages: messages as Parameters<typeof client.chat.send>[0]['chatRequest']['messages'],
+        messages: messages,
         tools: MCP_TOOLS,
-        maxTokens: 1000,
+        max_tokens: 1000,
       },
-      httpReferer: 'https://defi-sentinel.casper.network',
-      appTitle: 'DeFi Sentinel Agent',
-    });
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://defi-sentinel.casper.network',
+          'X-Title': 'DeFi Sentinel Agent',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-    // The SDK returns a ChatResult with choices[]
-    const result = response as { choices: Array<{ message: { content?: string | null; toolCalls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }; finishReason: string | null }> };
+    const result = response.data;
     const choice = result.choices?.[0];
 
     if (!choice) {
@@ -430,15 +436,13 @@ export async function runAgentDecision(context: AgentContext): Promise<AgentDeci
   const userMessage = buildUserMessage(context);
 
   try {
-    const client = new OpenRouter({ apiKey });
-
     const messages: Message[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userMessage },
     ];
 
     // ── Run agent loop (handles multi-turn tool use) ─────────────────────
-    const responseText = await agentLoop(client, messages, context);
+    const responseText = await agentLoop(apiKey, messages, context);
 
     // ── Parse decision JSON from response ────────────────────────────────
     const parsed = parseDecisionJson(responseText);

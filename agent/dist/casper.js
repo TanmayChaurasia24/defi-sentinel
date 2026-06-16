@@ -182,18 +182,32 @@ function motesToCspr(motes) {
  */
 async function getWalletData(walletAddress) {
     return withRetry('getWalletData', async () => {
-        const data = await apiGet(`/accounts/${walletAddress}`);
-        // CSPR.cloud returns balance data nested under `data` in their envelope
-        const account = data.data ?? data;
-        const balanceMotes = account.balance ?? '0';
-        const delegatedMotes = account.delegated_balance ?? '0';
-        return {
-            address: walletAddress,
-            balance: motesToCspr(balanceMotes),
-            totalDelegated: motesToCspr(delegatedMotes),
-            transferCount: Number(account.transfer_count ?? 0),
-            lastActivity: account.last_deploys_at ?? new Date(0).toISOString(),
-        };
+        try {
+            const data = await apiGet(`/accounts/${walletAddress}`);
+            // CSPR.cloud returns balance data nested under `data` in their envelope
+            const account = data.data ?? data;
+            const balanceMotes = account.balance ?? '0';
+            const delegatedMotes = account.delegated_balance ?? '0';
+            return {
+                address: walletAddress,
+                balance: motesToCspr(balanceMotes),
+                totalDelegated: motesToCspr(delegatedMotes),
+                transferCount: Number(account.transfer_count ?? 0),
+                lastActivity: account.last_deploys_at ?? new Date(0).toISOString(),
+            };
+        }
+        catch (err) {
+            if (err instanceof axios_1.AxiosError && err.response?.status === 404) {
+                return {
+                    address: walletAddress,
+                    balance: '0.000000',
+                    totalDelegated: '0.000000',
+                    transferCount: 0,
+                    lastActivity: new Date(0).toISOString(),
+                };
+            }
+            throw err;
+        }
     });
 }
 /**
@@ -203,15 +217,23 @@ async function getWalletData(walletAddress) {
  */
 async function getRecentDeploys(walletAddress) {
     return withRetry('getRecentDeploys', async () => {
-        const data = await apiGet(`/accounts/${walletAddress}/deploys?page=1&limit=10`);
-        const items = data.data ?? data ?? [];
-        return items.map((d) => ({
-            deployHash: d.deploy_hash ?? '',
-            blockHash: d.block_hash ?? '',
-            timestamp: d.timestamp ?? new Date(0).toISOString(),
-            cost: motesToCspr(d.cost ?? 0),
-            status: d.error_message ? 'failed' : 'success',
-        }));
+        try {
+            const data = await apiGet(`/accounts/${walletAddress}/deploys?page=1&limit=10`);
+            const items = data.data ?? data ?? [];
+            return items.map((d) => ({
+                deployHash: d.deploy_hash ?? '',
+                blockHash: d.block_hash ?? '',
+                timestamp: d.timestamp ?? new Date(0).toISOString(),
+                cost: motesToCspr(d.cost ?? 0),
+                status: d.error_message ? 'failed' : 'success',
+            }));
+        }
+        catch (err) {
+            if (err instanceof axios_1.AxiosError && err.response?.status === 404) {
+                return [];
+            }
+            throw err;
+        }
     });
 }
 /**
@@ -253,32 +275,44 @@ async function getCSPRPrice() {
  */
 async function getDelegationInfo(walletAddress) {
     return withRetry('getDelegationInfo', async () => {
-        // Fetch both in parallel
-        const [walletData, delegData] = await Promise.all([
-            apiGet(`/accounts/${walletAddress}`),
-            apiGet(`/accounts/${walletAddress}/delegations?page=1&limit=100`),
-        ]);
-        const account = walletData.data ?? walletData;
-        const delegItems = delegData.data ?? delegData ?? [];
-        let totalStakedMotes = 0n;
-        const validators = delegItems.map((d) => {
-            const staked = BigInt(String(d.stake ?? d.staked_amount ?? 0).split('.')[0]);
-            totalStakedMotes += staked;
+        try {
+            // Fetch both in parallel
+            const [walletData, delegData] = await Promise.all([
+                apiGet(`/accounts/${walletAddress}`),
+                apiGet(`/accounts/${walletAddress}/delegations?page=1&limit=100`),
+            ]);
+            const account = walletData.data ?? walletData;
+            const delegItems = delegData.data ?? delegData ?? [];
+            let totalStakedMotes = 0n;
+            const validators = delegItems.map((d) => {
+                const staked = BigInt(String(d.stake ?? d.staked_amount ?? 0).split('.')[0]);
+                totalStakedMotes += staked;
+                return {
+                    validatorKey: d.validator_public_key ?? d.validator ?? '',
+                    stakedAmount: motesToCspr(staked.toString()),
+                };
+            });
+            const liquidMotes = BigInt(String(account.balance ?? 0).split('.')[0]);
+            const totalMotes = liquidMotes + totalStakedMotes;
+            const stakingRatio = totalMotes === 0n
+                ? 0
+                : Number(totalStakedMotes * 10000n / totalMotes) / 10000;
             return {
-                validatorKey: d.validator_public_key ?? d.validator ?? '',
-                stakedAmount: motesToCspr(staked.toString()),
+                totalStaked: motesToCspr(totalStakedMotes.toString()),
+                validators,
+                stakingRatio,
             };
-        });
-        const liquidMotes = BigInt(String(account.balance ?? 0).split('.')[0]);
-        const totalMotes = liquidMotes + totalStakedMotes;
-        const stakingRatio = totalMotes === 0n
-            ? 0
-            : Number(totalStakedMotes * 10000n / totalMotes) / 10000;
-        return {
-            totalStaked: motesToCspr(totalStakedMotes.toString()),
-            validators,
-            stakingRatio,
-        };
+        }
+        catch (err) {
+            if (err instanceof axios_1.AxiosError && err.response?.status === 404) {
+                return {
+                    totalStaked: '0.000000',
+                    validators: [],
+                    stakingRatio: 0,
+                };
+            }
+            throw err;
+        }
     });
 }
 /**

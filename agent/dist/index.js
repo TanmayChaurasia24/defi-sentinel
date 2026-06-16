@@ -56,6 +56,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
 const node_cron_1 = __importDefault(require("node-cron"));
+const client_1 = require("@prisma/client");
 const casper_1 = require("./casper");
 const risk_1 = require("./risk");
 const contract_1 = require("./contract");
@@ -64,6 +65,7 @@ const claude_1 = require("./claude");
 const transaction_1 = require("./transaction");
 const x402_1 = require("./x402");
 const server_1 = require("./server");
+const prisma = new client_1.PrismaClient();
 // ─────────────────────────────────────────────────────────────────────────────
 // ANSI colour helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +96,6 @@ function log(msg) {
 function loadAndValidateConfig() {
     const required = [
         'CSPR_CLOUD_API_KEY',
-        'WATCHED_WALLET',
     ];
     const missing = required.filter((k) => !process.env[k] || process.env[k] === `your_${k.toLowerCase().replace(/_/g, '_')}_here`);
     if (missing.length > 0) {
@@ -119,7 +120,6 @@ function loadAndValidateConfig() {
         console.warn(`${C.yellow}⚠️   ANTHROPIC_API_KEY not set — using deterministic fallback (no Claude AI).${C.reset}`);
     }
     return {
-        watchedWallet: process.env.WATCHED_WALLET,
         pollIntervalSeconds: parseInt(process.env.POLL_INTERVAL_SECONDS ?? '60', 10),
         riskThreshold: parseInt(process.env.RISK_THRESHOLD ?? '70', 10),
         csrCloudApiKey: process.env.CSPR_CLOUD_API_KEY,
@@ -135,11 +135,10 @@ function printBanner(config) {
     console.log('');
     console.log(`${C.cyan}${C.bold}╔══════════════════════════════════════════════════════════╗${C.reset}`);
     console.log(`${C.cyan}${C.bold}║         🛡️  DeFi Sentinel — Agent v0.2.0                  ║${C.reset}`);
-    console.log(`${C.cyan}${C.bold}║     Autonomous AI Risk Monitor (Casper Testnet)           ║${C.reset}`);
+    console.log(`${C.cyan}${C.bold}║     Autonomous AI Risk Monitor (Multi-Tenant)             ║${C.reset}`);
     console.log(`${C.cyan}${C.bold}╚══════════════════════════════════════════════════════════╝${C.reset}`);
     console.log('');
     console.log(`${C.bold}  Configuration:${C.reset}`);
-    console.log(`  Watching:    ${C.cyan}${config.watchedWallet}${C.reset}`);
     console.log(`  Node:        ${C.dim}${config.nodeUrl}${C.reset}`);
     console.log(`  Interval:    ${config.pollIntervalSeconds}s`);
     console.log(`  Threshold:   ${config.riskThreshold}/100`);
@@ -174,20 +173,20 @@ async function runStartupChecks() {
 // ─────────────────────────────────────────────────────────────────────────────
 // State tracking
 // ─────────────────────────────────────────────────────────────────────────────
-let lastDecision = undefined;
-let lastScore = null;
+// Track state per wallet
+const lastDecisions = {};
 let pollCount = 0;
 let x402Client = null;
 const SCORE_DELTA_THRESHOLD = 5;
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent decision pretty-printer
 // ─────────────────────────────────────────────────────────────────────────────
-function printAgentDecision(decision, riskResult) {
+function printAgentDecision(decision, riskResult, wallet) {
     const actionColour = decision.action === 'rebalance' ? C.red
         : decision.action === 'alert' ? C.yellow : C.green;
     console.log('');
     console.log(`${C.magenta}${C.bold}┌──────────────────────────────────────────────────────────┐${C.reset}`);
-    console.log(`${C.magenta}${C.bold}│  🤖 DeFi Sentinel AI Decision                           │${C.reset}`);
+    console.log(`${C.magenta}${C.bold}│  🤖 DeFi Sentinel AI Decision (${wallet.slice(0, 8)}...)       │${C.reset}`);
     console.log(`${C.magenta}${C.bold}├──────────────────────────────────────────────────────────┤${C.reset}`);
     console.log(`${C.magenta}│${C.reset}  Action:     ${actionColour}${C.bold}${decision.action.toUpperCase()}${C.reset}`);
     console.log(`${C.magenta}│${C.reset}  Confidence: ${decision.confidence}%`);
@@ -221,33 +220,26 @@ function printAgentDecision(decision, riskResult) {
     console.log('');
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// Main poll function — runs every POLL_INTERVAL_SECONDS
+// Poll a single wallet
 // ─────────────────────────────────────────────────────────────────────────────
-async function runPoll(config) {
-    // Skip if paused via dashboard API
-    if ((0, server_1.isPaused)()) {
-        log(`${C.yellow}⏸️  Agent is paused — skipping cycle${C.reset}`);
-        return;
-    }
-    pollCount++;
-    const pollLabel = `${C.dim}[Poll #${pollCount}]${C.reset}`;
+async function pollWallet(config, wallet, pollLabel) {
+    const watchedWallet = wallet.address;
+    const lastScore = wallet.lastRiskScore;
     try {
         // ── 1. Fetch wallet data ─────────────────────────────────────────────────
-        log(`${pollLabel} Fetching wallet data for ${config.watchedWallet.slice(0, 12)}...`);
+        log(`${pollLabel} Fetching wallet data for ${watchedWallet.slice(0, 12)}...`);
         const [walletData, delegationInfo, csprPrice] = await Promise.all([
-            (0, casper_1.getWalletData)(config.watchedWallet),
-            (0, casper_1.getDelegationInfo)(config.watchedWallet),
+            (0, casper_1.getWalletData)(watchedWallet),
+            (0, casper_1.getDelegationInfo)(watchedWallet),
             (0, casper_1.getCSPRPrice)(),
         ]);
-        // Fetch recent deploys (for agent context)
         let recentDeploys = [];
         try {
-            recentDeploys = await (0, casper_1.getRecentDeploys)(config.watchedWallet);
+            recentDeploys = await (0, casper_1.getRecentDeploys)(watchedWallet);
         }
         catch {
             recentDeploys = [];
         }
-        // Price change — placeholder for now (would come from price history endpoint)
         const priceChange24h = 0;
         // ── 2. Compute risk score ────────────────────────────────────────────────
         const riskResult = (0, risk_1.computeRiskScore)({
@@ -270,23 +262,23 @@ async function runPoll(config) {
         }
         // ── 4. Run Claude AI agent decision ──────────────────────────────────────
         const context = {
-            walletAddress: config.watchedWallet,
+            walletAddress: watchedWallet,
             walletData,
             delegationInfo,
             riskResult,
             csprPrice,
             priceChange24h,
             recentDeploys,
-            previousDecision: lastDecision,
+            previousDecision: lastDecisions[watchedWallet],
         };
         const decision = await (0, claude_1.runAgentDecision)(context);
-        lastDecision = decision;
-        // ── 5. Print Claude's decision (formatted box) ───────────────────────────
-        printAgentDecision(decision, riskResult);
+        lastDecisions[watchedWallet] = decision;
+        // ── 5. Print Claude's decision ───────────────────────────
+        printAgentDecision(decision, riskResult, watchedWallet);
         // ── 6. Execute action based on decision ──────────────────────────────────
         if (decision.action === 'rebalance') {
             const params = {
-                fromWallet: config.watchedWallet,
+                fromWallet: watchedWallet,
                 amount: decision.suggestedAmount || process.env.REBALANCE_AMOUNT_CSPR || '50',
                 reason: decision.reasoning,
                 riskScore: riskResult.score,
@@ -296,10 +288,10 @@ async function runPoll(config) {
             if (validation.valid) {
                 const result = await (0, transaction_1.executeRebalance)(params);
                 if (result.success) {
-                    await (0, transaction_1.logRebalanceOnChain)(result, riskResult.score, config.watchedWallet);
+                    await (0, transaction_1.logRebalanceOnChain)(result, riskResult.score, watchedWallet);
                     log(`${C.green}✅ Rebalance executed: ${result.deployHash}${C.reset}`);
                     log(`${C.cyan}🔗 Explorer: ${result.explorerUrl}${C.reset}`);
-                    (0, server_1.addActionEntry)({
+                    (0, server_1.addActionEntry)(watchedWallet, {
                         timestamp: result.timestamp,
                         action: 'rebalance',
                         riskScore: riskResult.score,
@@ -310,7 +302,7 @@ async function runPoll(config) {
                 }
                 else {
                     log(`${C.red}❌ Rebalance failed: ${result.error}${C.reset}`);
-                    (0, server_1.addActionEntry)({
+                    (0, server_1.addActionEntry)(watchedWallet, {
                         timestamp: new Date().toISOString(),
                         action: 'rebalance',
                         riskScore: riskResult.score,
@@ -320,7 +312,7 @@ async function runPoll(config) {
             }
             else {
                 log(`${C.yellow}🛡️  Rebalance blocked by safety guard: ${validation.reason}${C.reset}`);
-                (0, server_1.addActionEntry)({
+                (0, server_1.addActionEntry)(watchedWallet, {
                     timestamp: new Date().toISOString(),
                     action: 'hold',
                     riskScore: riskResult.score,
@@ -329,9 +321,8 @@ async function runPoll(config) {
             }
         }
         else if (decision.action === 'alert') {
-            // Log alert on-chain
-            await (0, contract_1.logAlertOnChain)(config.watchedWallet, riskResult.score, decision.warnings);
-            (0, server_1.addActionEntry)({
+            await (0, contract_1.logAlertOnChain)(watchedWallet, riskResult.score, decision.warnings);
+            (0, server_1.addActionEntry)(watchedWallet, {
                 timestamp: new Date().toISOString(),
                 action: 'alert',
                 riskScore: riskResult.score,
@@ -339,8 +330,7 @@ async function runPoll(config) {
             });
         }
         else {
-            // Hold — just log it
-            (0, server_1.addActionEntry)({
+            (0, server_1.addActionEntry)(watchedWallet, {
                 timestamp: new Date().toISOString(),
                 action: 'hold',
                 riskScore: riskResult.score,
@@ -352,8 +342,8 @@ async function runPoll(config) {
         if (scoreDelta > SCORE_DELTA_THRESHOLD) {
             const deltaLabel = lastScore === null ? 'first poll' : `${scoreDelta} pts`;
             log(`${pollLabel} Score changed (${deltaLabel}) — writing to Sentinel contract...`);
-            const scoreWriteResult = await (0, contract_1.writeRiskScore)(config.watchedWallet, riskResult.score);
-            const actionWriteResult = await (0, contract_1.writeAction)(config.watchedWallet, riskResult);
+            const scoreWriteResult = await (0, contract_1.writeRiskScore)(watchedWallet, riskResult.score);
+            const actionWriteResult = await (0, contract_1.writeAction)(watchedWallet, riskResult);
             void actionWriteResult;
             if (scoreWriteResult.dryRun) {
                 log(`${pollLabel} ${C.yellow}[DRY-RUN] Contract write simulated — set SENTINEL_CONTRACT_HASH to enable.${C.reset}`);
@@ -364,11 +354,18 @@ async function runPoll(config) {
             else {
                 log(`${pollLabel} ${C.red}❌ Contract write failed: ${scoreWriteResult.error}${C.reset}`);
             }
+            await prisma.userWallet.update({
+                where: { address: watchedWallet },
+                data: { lastRiskScore: riskResult.score, lastCheckedAt: new Date() }
+            });
         }
         else {
             log(`${pollLabel} Score delta ${scoreDelta} pts ≤ threshold — skipping contract write.`);
+            await prisma.userWallet.update({
+                where: { address: watchedWallet },
+                data: { lastCheckedAt: new Date() }
+            });
         }
-        lastScore = riskResult.score;
         // ── 8. Update dashboard state ────────────────────────────────────────────
         const x402Status = x402Client ? (0, x402_1.getX402Status)(x402Client) : {
             totalCalls: 0,
@@ -376,7 +373,7 @@ async function runPoll(config) {
             lastPayment: null,
             averageCostPerCall: '0.000000',
         };
-        (0, server_1.updateDashboardState)({
+        (0, server_1.updateDashboardState)(watchedWallet, {
             walletData,
             riskResult,
             decision,
@@ -385,13 +382,37 @@ async function runPoll(config) {
         });
     }
     catch (err) {
-        // Log but never crash — agent must keep running
         const msg = err instanceof Error ? err.message : String(err);
-        log(`${C.red}❌  Poll #${pollCount} failed: ${msg}${C.reset}`);
-        if (err instanceof Error && err.stack) {
-            console.error(`${C.dim}${err.stack}${C.reset}`);
+        log(`${C.red}❌  Poll #${pollCount} failed for ${watchedWallet}: ${msg}${C.reset}`);
+        (0, server_1.setAgentStatus)(watchedWallet, 'error');
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Main poll function — runs every POLL_INTERVAL_SECONDS
+// ─────────────────────────────────────────────────────────────────────────────
+async function runPoll(config) {
+    if ((0, server_1.isPaused)()) {
+        log(`${C.yellow}⏸️  Agent is paused — skipping cycle${C.reset}`);
+        return;
+    }
+    pollCount++;
+    const pollLabel = `${C.dim}[Poll #${pollCount}]${C.reset}`;
+    // Fetch all registered wallets
+    const wallets = await prisma.userWallet.findMany();
+    if (wallets.length === 0) {
+        log(`${pollLabel} No wallets registered in database. Waiting for users to connect...`);
+        // Fallback: check if WATCHED_WALLET is in env and insert it
+        if (process.env.WATCHED_WALLET) {
+            log(`${pollLabel} Found WATCHED_WALLET in .env. Auto-registering...`);
+            await prisma.userWallet.create({ data: { address: process.env.WATCHED_WALLET } });
+            return runPoll(config);
         }
-        (0, server_1.setAgentStatus)('error');
+        return;
+    }
+    log(`${pollLabel} Processing ${wallets.length} registered wallets...`);
+    // Process wallets sequentially to avoid rate limits / overwhelming Claude API
+    for (const wallet of wallets) {
+        await pollWallet(config, wallet, pollLabel);
     }
     console.log('');
 }
