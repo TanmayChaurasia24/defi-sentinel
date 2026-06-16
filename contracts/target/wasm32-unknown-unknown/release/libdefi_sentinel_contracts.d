@@ -1,1 +1,0 @@
-/Users/tanmaykumarchaurasia/Desktop/programming/casper/defi-sentinel/contracts/target/wasm32-unknown-unknown/release/libdefi_sentinel_contracts.rlib: /Users/tanmaykumarchaurasia/Desktop/programming/casper/defi-sentinel/contracts/src/lib.rs
