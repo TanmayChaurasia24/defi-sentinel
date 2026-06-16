@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: defi-sentinel-agent
+    env: docker
+    dockerContext: agent
+    dockerfilePath: ./agent/Dockerfile
+    region: ohio
+    plan: free
+    healthCheckPath: /api/status
+    envVars:
+      - key: PORT
+        value: 4000
