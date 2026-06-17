@@ -1,244 +1,107 @@
-# 🛡️ DeFi Sentinel — Autonomous On-Chain Risk Monitor
+# 🛡️ DeFi Sentinel
 
-> **Casper Agentic Buildathon 2026** submission
-> An autonomous AI agent that monitors DeFi wallet positions on the Casper Network 24/7.
-
----
-
-## 🧠 What is DeFi Sentinel?
-
-DeFi Sentinel is an **autonomous AI agent** that watches your Casper wallet in real time and protects it from risky positions. It combines formula-based risk scoring with Claude AI reasoning to make intelligent, explainable decisions.
-
-### How it works (end-to-end)
-
-1. **Polls** a Casper wallet every 60 seconds via CSPR.cloud API
-2. **Computes** a risk score (0–100) using a formula-based engine
-3. **Feeds** the risk data into a **Claude Sonnet 4** AI agent via MCP tools
-4. **Claude decides**: `rebalance` / `alert` / `hold` — and explains its reasoning
-5. If `rebalance`: agent **auto-signs and broadcasts a transaction** on Casper Testnet
-6. Every API data query can be **paid via x402 micropayments**
-7. Every action is **logged immutably** to the Sentinel Odra smart contract
-8. A **Next.js dashboard** shows live risk scores, agent reasoning, and action history
+DeFi Sentinel is an **Autonomous AI Guardian** for the Casper Network. It acts as your personal hedge-fund manager, monitoring your DeFi positions 24/7 and autonomously taking action to protect your assets during market crashes.
 
 ---
 
-## 📁 Project Structure
+## 📉 The Problem
+Crypto markets never sleep. They are 24/7, highly volatile, and entirely unforgiving. If you have funds locked up in DeFi (like heavily staked CSPR or collateralized loans) and the market suddenly crashes while you are asleep, **you can be liquidated and lose everything.** Managing DeFi risk currently requires humans to obsessively stare at charts and manually move funds, which is stressful and inefficient.
 
-```
-defi-sentinel/
-├── contracts/               # Rust/Odra 2.1.0 smart contract
-│   ├── Cargo.toml
-│   └── src/sentinel.rs      # SentinelContract (deployed to Casper Testnet)
-│
-├── agent/                   # TypeScript autonomous agent
-│   └── src/
-│       ├── index.ts          # Main polling loop + orchestration
-│       ├── risk.ts           # Formula-based risk scoring engine
-│       ├── casper.ts         # CSPR.cloud API client
-│       ├── claude.ts         # Claude AI agent (Sonnet 4 + MCP tools)
-│       ├── transaction.ts    # Autonomous tx signing + safety guards
-│       ├── x402.ts           # x402 micropayment client
-│       ├── contract.ts       # On-chain logging to Sentinel contract
-│       ├── mcp.ts            # MCP server client wrapper
-│       ├── server.ts         # Express API for dashboard
-│       └── utils.ts          # Shared utilities
-│
-├── dashboard/               # Next.js 16 dashboard UI
-│   ├── app/page.tsx          # Main dashboard layout
-│   └── components/
-│       ├── RiskGauge.tsx     # SVG circular risk gauge
-│       ├── PositionList.tsx  # Wallet position cards
-│       ├── ActionLog.tsx     # Action history table
-│       ├── AgentReasoningFeed.tsx  # Claude AI output display
-│       └── RiskChart.tsx     # Recharts risk score history
-│
-└── README.md
+## 🛡️ The Solution
+DeFi Sentinel solves this by assigning an AI Agent to watch your wallet. 
+Instead of relying on a human, the Sentinel Agent runs continuously in the background, pinging the Casper blockchain and live market data every 60 seconds. It evaluates your real-time risk, and if things get dangerous, it **autonomously executes smart contract transactions** to save your position before a liquidation engine wipes you out.
+
+---
+
+## 🏗️ Architecture & Workflow
+
+The project is split into two main components: the **Agent** (Backend) and the **Dashboard** (Frontend).
+
+```mermaid
+graph TD
+    A[Casper Testnet / CSPR.cloud] -->|Wallet Balances & Market Price| B(Node.js AI Agent)
+    B -->|Calculates Risk Score| C{Claude AI LLM}
+    C -->|Decision: Hold, Alert, or Rebalance| B
+    B -->|Logs Decision & Risk Score| D[(Casper Smart Contract)]
+    B -->|Executes Emergency Transfer| E[Casper Blockchain]
+    B <-->|Provides API State| F[Next.js Dashboard]
+    U((User)) -->|Connects Wallet| F
 ```
 
+### 1. The Autonomous Agent (Node.js)
+The brain of the operation. It runs as a continuous background process.
+- **Data Ingestion:** Every 60 seconds, it fetches live wallet balances, delegation statuses, and CSPR/USD prices using the `CSPR.cloud` API.
+- **Risk Engine:** Computes a deterministic risk score (0-100) based on factors like staking ratio (>80% is dangerous), liquid balances, and 24h market price drops.
+- **AI Decisioning:** Feeds the risk data into an LLM (Claude). The AI acts as a financial analyst, deciding whether to `HOLD`, `ALERT`, or `REBALANCE`.
+- **Execution & Smart Contracts:**
+  - If the decision is `ALERT`, it writes the new elevated risk score to an on-chain Casper Smart Contract.
+  - If the decision is `REBALANCE`, it uses the `casper-js-sdk` to cryptographically sign and broadcast an emergency transfer, moving your funds to safety.
+- **State Management:** Tracks registered wallets using Prisma and SQLite.
+
+### 2. The Dashboard (Next.js)
+The control centre for the user.
+- Built with React, Next.js, and Tailwind CSS.
+- Users connect their Casper wallet address to register it with the Agent.
+- Provides a real-time view of the Agent's thought process, displaying the current Risk Score, the specific Risk Factors, the AI's reasoning, and an immutable log of recent on-chain actions.
+
 ---
 
-## 🚀 Quick Start
+## 🚀 Key Features
+
+- **24/7 Autonomous Monitoring:** No human intervention required. The agent loops indefinitely, monitoring the chain via CSPR.cloud.
+- **AI-Driven Logic:** Moves beyond simple "if/then" trading bots. The AI understands context and provides plain-English reasoning for every action it takes.
+- **On-Chain Auditability:** Every major change in risk is written to a Smart Contract, creating a transparent, immutable log of the AI's behavior.
+- **Emergency Rebalancing:** Fully capable of signing and broadcasting `Transfer` deploys using the `casper-js-sdk` to protect user funds during black-swan events.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Casper Blockchain:** Smart Contracts, `casper-js-sdk`, Casper Testnet.
+- **Data Layer:** CSPR.cloud REST API.
+- **Backend Agent:** Node.js, Express, node-cron, Prisma, SQLite.
+- **Frontend Dashboard:** Next.js (App Router), React, Tailwind CSS, Lucide Icons.
+- **AI Integration:** OpenRouter (Claude / Anthropic).
+- **Deployment:** Render (Agent API) & Vercel (Frontend Dashboard).
+
+---
+
+## 💻 Local Setup & Development
 
 ### Prerequisites
-
 - Node.js 18+
-- npm
-- (Optional) Casper MCP Server for enhanced tool access
+- A CSPR.cloud API Key
+- An Anthropic/OpenRouter API Key (Optional, falls back to deterministic logic if missing).
 
-### 1. Clone and configure
-
-```bash
-git clone <repo-url>
-cd defi-sentinel
-
-# Configure agent environment
-cp agent/.env.example agent/.env
-# Edit agent/.env with your keys
-```
-
-### 2. Install dependencies
-
-```bash
-# Agent
-cd agent && npm install
-
-# Dashboard
-cd ../dashboard && npm install
-```
-
-### 3. Run everything
-
-```bash
-# Terminal 1 — Start Agent + API Server
-cd agent && npm run dev
-
-# Terminal 2 — Start Dashboard
-cd dashboard && npm run dev
-```
-
-- **Agent**: starts polling, prints risk scores and AI decisions to terminal
-- **API Server**: runs on http://localhost:4000
-- **Dashboard**: opens at http://localhost:3000
-
----
-
-## 🤖 AI Agent
-
-DeFi Sentinel uses **Claude Sonnet 4** as its decision-making brain. The agent:
-
-- Receives real-time wallet data via Casper MCP Server tools
-- Analyzes risk using formula-based scoring plus contextual AI reasoning
-- Makes autonomous decisions: **rebalance** / **alert** / **hold**
-- Explains every decision in plain English with confidence scores
-- Supports multi-turn tool use (up to 5 iterations per cycle)
-
-### Fallback Mode
-
-If `ANTHROPIC_API_KEY` is not set, the agent falls back to deterministic mode — it uses the risk engine's recommendation directly without calling Claude. The agent never crashes due to a missing API key.
-
-### Sample Agent Output
-
-```
-╔══════════════════════════════════════════════════════════╗
-║         🛡️  DeFi Sentinel — Week 2 Agent v0.2.0          ║
-║     Autonomous AI Risk Monitor (Casper Testnet)          ║
-╚══════════════════════════════════════════════════════════╝
-
-  [82/100] 🔴 DANGER → rebalance | Extreme staking ratio (+35), Severe price crash (+30)
-
-┌──────────────────────────────────────────────────────────┐
-│  🤖 DeFi Sentinel AI Decision                            │
-├──────────────────────────────────────────────────────────┤
-│  Action:     REBALANCE                                    │
-│  Confidence: 87%                                          │
-│  Urgency:    high                                         │
-│  Amount:     50 CSPR                                      │
-│                                                           │
-│  Reasoning:                                               │
-│  Staking ratio at 85% with a 12% price crash in 24h.     │
-│  Immediate rebalance of 50 CSPR to reduce exposure.      │
-└──────────────────────────────────────────────────────────┘
-```
-
----
-
-## 💸 x402 Micropayments
-
-Every blockchain data query can be paid via Casper's native x402 protocol:
-
-- Agent pays per-request with cryptographic payment proof
-- Payments are micro-sized (fractions of CSPR)
-- Full payment history visible on the dashboard
-- **Graceful fallback**: if x402 payment fails, the agent continues without payment
-
----
-
-## 🛡️ Safety Guards
-
-DeFi Sentinel includes 5 non-negotiable safety guards that prevent the agent from acting recklessly:
-
-| # | Guard | Default |
-|---|-------|---------|
-| 1 | Max rebalance amount | 50 CSPR (`REBALANCE_AMOUNT_CSPR`) |
-| 2 | Max % of liquid balance | 30% |
-| 3 | Rate limit | 3 rebalances per hour |
-| 4 | Risk threshold | Score ≥ 70 required |
-| 5 | Testnet only | Refuses to run on mainnet |
-
----
-
-## 🖥️ Dashboard
-
-The Next.js dashboard provides a live view of the agent's state:
-
-- **Risk Gauge**: SVG circular dial with glow effects and pulse animation at danger level
-- **Wallet Position**: Liquid/staked balances with USD values and staking ratio bar
-- **x402 Status**: Total API calls, total CSPR spent, average cost per call
-- **Risk Chart**: Historical risk score line chart with warning/danger threshold lines
-- **Agent Reasoning**: Full Claude AI output with confidence meter and warning badges
-- **Action Log**: Scrollable table with color-coded action badges and explorer links
-
-The dashboard polls the agent API every 10 seconds. It also supports **pause/resume** controls.
-
----
-
-## 📋 Risk Scoring Engine
-
-The formula-based risk engine evaluates 4 factors:
-
-| Factor | Condition | Points |
-|--------|-----------|--------|
-| Extreme staking ratio | > 80% staked | +35 |
-| High staking ratio | 60–80% staked | +20 |
-| Severe price crash | 24h change < -10% | +30 |
-| Price dip | 24h change < -5% | +15 |
-| Critical liquid balance | < 100 CSPR liquid | +20 |
-| Low liquid balance | < 500 CSPR liquid | +10 |
-| Prolonged inactivity | > 30 days since last tx | +5 |
-
-Score thresholds: **0–39** = Safe, **40–69** = Warning, **70–100** = Danger
-
----
-
-## ⚙️ Environment Variables
-
-See [`agent/.env.example`](agent/.env.example) for the full list. Key variables:
-
-| Variable | Description |
-|----------|-------------|
-| `CSPR_CLOUD_API_KEY` | CSPR.cloud API key |
-| `WATCHED_WALLET` | Casper wallet address to monitor |
-| `ANTHROPIC_API_KEY` | Claude AI API key (optional) |
-| `RISK_THRESHOLD` | Risk score threshold for rebalance (default: 70) |
-| `REBALANCE_AMOUNT_CSPR` | Max CSPR per rebalance (default: 50) |
-| `DASHBOARD_API_PORT` | Express API port (default: 4000) |
-
----
-
-## 🧪 Testing
-
+### 1. Setup the Agent
 ```bash
 cd agent
-npm test        # 28 unit tests for risk scoring engine
-npm run lint    # TypeScript strict mode compilation check
+npm install
+cp .env.example .env
+# Fill in your CSPR_CLOUD_API_KEY and AGENT_PRIVATE_KEY in .env
+
+# Initialize the local SQLite database
+npx prisma generate
+npx prisma db push
+
+# Start the agent
+npm run dev
 ```
 
+### 2. Setup the Dashboard
+```bash
+cd dashboard
+npm install
+cp .env.example .env.local
+# Ensure NEXT_PUBLIC_AGENT_API_URL points to the running Agent (default: http://localhost:4000)
+
+# Start the dashboard
+npm run dev
+```
+
+Visit `http://localhost:3000` to connect your wallet and watch the Agent begin its analysis!
+
 ---
 
-## 📜 Smart Contract
-
-The Sentinel contract (Odra 2.1.0 on Casper Testnet) stores:
-
-- Risk scores per wallet
-- Rebalance deploy hashes
-- Action history (hold/alert/rebalance)
-- Action timestamps and counts
-
-Entry points: `update_risk_score`, `log_rebalance`, `log_action`
-Read endpoints: `get_risk_score`, `get_action_count`, `get_last_action`, `get_deploy_hash`, `get_owner`
-
----
-
-## 📄 License
-
-MIT
+## 📜 License
+MIT License. Built for the Casper Network ecosystem.
