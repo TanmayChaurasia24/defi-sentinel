@@ -188,9 +188,12 @@ export function startApiServer(port: number): void {
 
   // ── GET /api/status ────────────────────────────────────────────────────────
   app.get('/api/status', (req, res) => {
-    const wallet = getWallet(req, res);
-    if (!wallet) return;
-    res.json(states[wallet]);
+    const walletAddress = req.query.wallet as string;
+    if (!walletAddress) {
+      return res.json({ status: 'ok', uptime: process.uptime() });
+    }
+    ensureState(walletAddress);
+    res.json(states[walletAddress]);
   });
 
   // ── GET /api/history ───────────────────────────────────────────────────────
