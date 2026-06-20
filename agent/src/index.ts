@@ -271,7 +271,8 @@ async function pollWallet(config: Config, wallet: any, pollLabel: string) {
       recentDeploys = [];
     }
 
-    const priceChange24h = 0;
+    // HACKATHON DEMO MODE: Simulate a 25% market crash to force a "Rebalance" action
+    const priceChange24h = -25;
 
     // ── 2. Compute risk score ────────────────────────────────────────────────
     const riskResult: RiskResult = computeRiskScore({

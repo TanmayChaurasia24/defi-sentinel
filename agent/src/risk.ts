@@ -70,7 +70,8 @@ const SCORING = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const THRESHOLD_WARNING = 40;
-const THRESHOLD_DANGER = 70;
+// HACKATHON DEMO MODE: Lower threshold so the crash triggers an immediate Rebalance
+const THRESHOLD_DANGER = 30;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main scoring function
