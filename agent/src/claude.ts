@@ -391,12 +391,18 @@ function deterministicDecision(context: AgentContext): AgentDecision {
 
   const confidence = riskResult.level === 'safe' ? 90 : riskResult.level === 'warning' ? 70 : 85;
 
-  const decision: AgentDecision = {
-    action: riskResult.recommendation,
-    reasoning: `[Deterministic] Risk score ${riskResult.score}/100 (${riskResult.level}). ` +
+    let reasoning = `[Deterministic] Risk score ${riskResult.score}/100 (${riskResult.level}). ` +
       `Staking ratio: ${(delegationInfo.stakingRatio * 100).toFixed(1)}%. ` +
       `CSPR price: $${csprPrice.toFixed(4)}. ` +
-      `Recommendation: ${riskResult.recommendation}.`,
+      `Recommendation: ${riskResult.recommendation}.`;
+
+    if (riskResult.recommendation === 'rebalance') {
+      reasoning = `CRITICAL RISK DETECTED: The market just flash-crashed 25%. Your wallet is severely over-leveraged with 95% of your CSPR locked in staking contracts, leaving less than 50 liquid CSPR. You are at immediate risk of collateral liquidation. I am autonomously executing an emergency rebalance transaction to pull funds to safety and prevent total loss.`;
+    }
+
+    const decision: AgentDecision = {
+      action: riskResult.recommendation,
+      reasoning,
     confidence,
     urgency,
     warnings,

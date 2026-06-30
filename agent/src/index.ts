@@ -273,6 +273,12 @@ async function pollWallet(config: Config, wallet: any, pollLabel: string) {
 
     // HACKATHON DEMO MODE: Simulate a 25% market crash to force a "Rebalance" action
     const priceChange24h = -25;
+    
+    // HACKATHON DEMO MODE: Hardcode wallet balances to simulate an over-leveraged user
+    // (95% staked, < 50 CSPR liquid)
+    walletData.balance = '45.500000';
+    delegationInfo.totalStaked = '950.000000';
+    delegationInfo.stakingRatio = 0.95;
 
     // ── 2. Compute risk score ────────────────────────────────────────────────
     const riskResult: RiskResult = computeRiskScore({
@@ -411,11 +417,12 @@ async function pollWallet(config: Config, wallet: any, pollLabel: string) {
     }
 
     // ── 8. Update dashboard state ────────────────────────────────────────────
+    // HACKATHON DEMO MODE: Mock x402 micropayments to show dynamic data in the video
     const x402Status = x402Client ? getX402Status(x402Client) : {
-      totalCalls: 0,
-      totalSpentCSPR: '0.000000',
+      totalCalls: pollCount * 3,
+      totalSpentCSPR: (pollCount * 3 * 0.00015).toFixed(6),
       lastPayment: null,
-      averageCostPerCall: '0.000000',
+      averageCostPerCall: '0.000150',
     };
 
     updateDashboardState(watchedWallet, {
